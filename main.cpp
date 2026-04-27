@@ -5,13 +5,22 @@
 #include <cstdlib>
 #include <time.h>
 
-constexpr int WIDTH = 800;
-constexpr int HEIGHT = 600;
+constexpr int WIDTH = 768;
+constexpr int HEIGHT = 768;
 constexpr int TILE_SIZE = 24;
+constexpr int SNAKE_VELOCITY = 75; 
 
 struct Vector2 {
 	int x;
 	int y;
+
+	bool operator==(const Vector2& other) const {
+		return (x == other.x) && (y == other.y);
+	}
+
+	bool operator!=(const Vector2& other) const {
+		return !(*this == other);
+	}
 };
 
 enum Action {
@@ -28,8 +37,9 @@ struct Food {
 };
 
 struct Snake {
+	Vector2 headPos;
 	Vector2 pos;
-	int length;
+	int bodyLength;
 	Action action;
 };
 
@@ -42,9 +52,10 @@ void SetupGameBoard(AppState& appState, Snake& snake);
 void CalcSnakePos(Snake& snake);
 void UpdateSnakePos(Snake& snake, AppState& appState);
 void spawnFood(Food& food, AppState& appState);
+void UpdateGameBoard(AppState& appState, Snake& snake, Food& food);
+void UpdateSnakeBody(Snake& snake, AppState& appState);
 
-int SDL_main(int argc, char* argv[])
-{
+int SDL_main(int argc, char* argv[]) {
 	SDL_Init(SDL_INIT_AUDIO | SDL_INIT_VIDEO);
 
 	AppState appState = {};
@@ -52,6 +63,7 @@ int SDL_main(int argc, char* argv[])
 	appState.renderer = SDL_CreateRenderer(appState.window, NULL);
 
 	Snake snake = {};
+	snake.bodyLength = 0;
 	snake.action = Action::None;
 
 	Food food = {};
@@ -68,42 +80,33 @@ int SDL_main(int argc, char* argv[])
 			switch (event.type) {
 			case SDL_EVENT_QUIT:
 				running = false;
-				break; 
+				break;
 
 			case SDL_EVENT_KEY_DOWN:
 				switch (event.key.key) {
-					case SDLK_ESCAPE:
-						running = false;
-						break;
-					
 					case SDLK_W:
 						if (snake.action == Action::Down) break;
-
 						snake.action = Action::Up;
 						break;
 
 					case SDLK_S:
 						if (snake.action == Action::Up) break;
-
 						snake.action = Action::Down;
 						break;
-					
+
 					case SDLK_A:
 						if (snake.action == Action::Right) break;
-
 						snake.action = Action::Left;
 						break;
 
 					case SDLK_D:
 						if (snake.action == Action::Left) break;
-
 						snake.action = Action::Right;
 						break;
 				}
 			}
 		}
 
-#pragma region  RenderSection
 		// Clear the screen
 		SDL_RenderClear(appState.renderer);
 
@@ -112,14 +115,12 @@ int SDL_main(int argc, char* argv[])
 		SDL_RenderFillRect(appState.renderer, NULL);
 
 		// render objects
-		spawnFood(food, appState);
-		UpdateSnakePos(snake, appState);
+		SDL_Log("Snake body length: %d", snake.bodyLength);
+		UpdateGameBoard(appState, snake, food);
 
 		SDL_RenderPresent(appState.renderer);
-#pragma endregion
-	
 	}
-	
+
 	SDL_DestroyRenderer(appState.renderer);
 	SDL_DestroyWindow(appState.window);
 	SDL_Quit();
@@ -130,12 +131,10 @@ void SetupGameBoard(AppState& appState, Snake& snake) {
 	SDL_RenderClear(appState.renderer);
 
 	// snake starting position
-	snake.pos.x = 384;
-	snake.pos.y = 384;
+	snake.headPos.x = WIDTH / 2;
+	snake.headPos.y = HEIGHT / 2;
 
-	snake.length = 1 * TILE_SIZE;
-
-	SDL_FRect snakeRect = { snake.pos.x, snake.pos.y, TILE_SIZE, snake.length };
+	SDL_FRect snakeRect = { snake.headPos.x, snake.headPos.y, TILE_SIZE, TILE_SIZE };
 	SDL_SetRenderDrawColor(appState.renderer, 128, 128, 128, 255);
 	SDL_RenderFillRect(appState.renderer, &snakeRect);
 
@@ -143,44 +142,47 @@ void SetupGameBoard(AppState& appState, Snake& snake) {
 }
 
 void CalcSnakePos(Snake& snake) {
-	if (snake.pos.x < 0) {
-		snake.pos.x = WIDTH - TILE_SIZE;
+	if (snake.headPos.x < 0) {
+		snake.headPos.x = WIDTH - TILE_SIZE;
 	}
-	else if (snake.pos.x >= WIDTH) {
-		snake.pos.x = 0;
+	else if (snake.headPos.x >= WIDTH) {
+		snake.headPos.x = 0;
 	}
 
-	if (snake.pos.y < 0) {
-		snake.pos.y = HEIGHT - TILE_SIZE;
+	if (snake.headPos.y < 0) {
+		snake.headPos.y = HEIGHT - TILE_SIZE;
 	}
-	else if (snake.pos.y >= HEIGHT) {
-		snake.pos.y = 0;
+	else if (snake.headPos.y >= HEIGHT) {
+		snake.headPos.y = 0;
 	}
 
 	if (snake.action == Action::Up) {
-		snake.pos.y -= TILE_SIZE;
+		snake.headPos.y -= TILE_SIZE;
 	}
-	else if (snake.action == Action::Down) {
-		snake.pos.y += TILE_SIZE;
+	
+	if (snake.action == Action::Down) {
+		snake.headPos.y += TILE_SIZE;
 	}
-	else if (snake.action == Action::Left) {
-		snake.pos.x -= TILE_SIZE;
+	
+	if (snake.action == Action::Left) {
+		snake.headPos.x -= TILE_SIZE;
 	}
-	else if (snake.action == Action::Right) {
-		snake.pos.x += TILE_SIZE;
+	
+	if (snake.action == Action::Right) {
+		snake.headPos.x += TILE_SIZE;
 	}
 
-	Sleep(50);
-	SDL_Log("Snake Pos: %d, %d", snake.pos.x, snake.pos.y);
+	Sleep(SNAKE_VELOCITY);
 }
 
 void UpdateSnakePos(Snake& snake, AppState& appState) {
 	CalcSnakePos(snake);
 
-	// snake
-	SDL_FRect snakeRect = { snake.pos.x, snake.pos.y, TILE_SIZE, snake.length };
-	SDL_SetRenderDrawColor(appState.renderer, 128, 128, 128, 255);
-	SDL_RenderFillRect(appState.renderer, &snakeRect);
+	// snake head
+	SDL_FRect snakeHeadRect = { snake.headPos.x, snake.headPos.y, TILE_SIZE, TILE_SIZE };
+	SDL_SetRenderDrawColor(appState.renderer, 0, 255, 100, 255);
+	SDL_RenderFillRect(appState.renderer, &snakeHeadRect);
+	
 }
 
 void spawnFood(Food& food, AppState& appState) {
@@ -190,7 +192,43 @@ void spawnFood(Food& food, AppState& appState) {
 	}
 
 	SDL_FRect foodRect = { food.pos.x, food.pos.y, TILE_SIZE, TILE_SIZE };
-	SDL_SetRenderDrawColor(appState.renderer, 169, 169, 169, 255);
+	SDL_SetRenderDrawColor(appState.renderer, 255, 0, 0, 255);
 	SDL_RenderFillRect(appState.renderer, &foodRect);
 	food.isSpawn = true;
+}
+
+void UpdateGameBoard(AppState& appState, Snake& snake, Food& food) {
+	spawnFood(food, appState);
+	UpdateSnakePos(snake, appState);
+
+	if (snake.headPos == food.pos) {
+		food.isSpawn = false;
+		snake.bodyLength++;
+	}
+	
+	UpdateSnakeBody(snake, appState);
+}
+
+void UpdateSnakeBody(Snake& snake, AppState& appState) {
+	if (snake.bodyLength <= 0) return;
+	for (int i = 1; i <= snake.bodyLength; i++) {
+		snake.pos = snake.headPos;
+
+		if (snake.action == Action::Up) {
+			snake.pos.y = snake.headPos.y + TILE_SIZE * i;
+		}
+		else if (snake.action == Action::Down) {
+			snake.pos.y = snake.headPos.y - TILE_SIZE * i;
+		}
+		else if (snake.action == Action::Left) {
+			snake.pos.x = snake.headPos.x + TILE_SIZE * i;
+		}
+		else if (snake.action == Action::Right) {
+			snake.pos.x = snake.headPos.x - TILE_SIZE * i;
+		}
+
+		SDL_FRect snakeBodyRect = { snake.pos.x, snake.pos.y, TILE_SIZE, TILE_SIZE };
+		SDL_SetRenderDrawColor(appState.renderer, 128, 128, 128, 255);
+		SDL_RenderFillRect(appState.renderer, &snakeBodyRect);
+	}
 }
