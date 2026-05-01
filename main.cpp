@@ -1,13 +1,17 @@
 #include <SDL3/SDL.h>
 #include <SDl3/SDL_main.h>
 #include <SDL3/SDL_video.h>
+#include <SDL3_ttf/SDL_ttf.h>
 #include <windows.h>
 #include <cstdlib>	
 #include <time.h>
 #include <vector>
+#include <string>
 
 constexpr int WIDTH = 768;
-constexpr int HEIGHT = 768;
+constexpr int HEIGHT = 960;
+constexpr int GAME_BOARD_WIDTH = 768;
+constexpr int GAME_BOARD_HEIGHT = 768;
 constexpr int TILE_SIZE = 48;
 constexpr double DELAY = 0.1; 
 
@@ -46,12 +50,13 @@ struct Snake {
 struct AppState {
 	SDL_Window* window;
 	SDL_Renderer* renderer;
+	TTF_Font* font;
 	int lastTick;
 	int currTick;
 	double deltaTime;
 	double delayTime;
 	bool isRunning;
-
+	int score;
 };
 
 void SetupGameBoard(AppState& appState, Snake& snake);
@@ -59,6 +64,7 @@ void InputEvent(Snake& snake, SDL_Scancode scancode);
 void CalcSnakePos(Snake& snake, AppState& appState);
 void CalcSnakeBodyPos(Snake& snake);
 void SpawnFood(Food& food, AppState& appState, Snake& snake);
+void UpdateUI(AppState& appState);
 void UpdateGameBoard(AppState& appState, Snake& snake, Food& food);
 void MoveSnake(AppState& appState, Snake& snake);
 bool IsCollide(Snake& snake);
@@ -71,6 +77,7 @@ int SDL_main(int argc, char* argv[]) {
 	AppState appState = {};
 	appState.window = SDL_CreateWindow("Snake Game", WIDTH, HEIGHT, SDL_WINDOW_KEYBOARD_GRABBED);
 	appState.renderer = SDL_CreateRenderer(appState.window, NULL);
+	appState.score = 0;
 
 	Snake snake = {};
 	snake.bodyPos.reserve(100);
@@ -107,16 +114,17 @@ int SDL_main(int argc, char* argv[]) {
 		SDL_RenderFillRect(appState.renderer, NULL);
 
 		// render objects
+		UpdateUI(appState);
+
 		UpdateGameBoard(appState, snake, food);
 
 		SDL_RenderPresent(appState.renderer);
 
-		// calculate the delta time for the next frame
+		// calculate the delta time for the next frame and create a delay to control the snake's movement speed
 		appState.currTick = SDL_GetTicks();
 		appState.deltaTime = (appState.currTick - appState.lastTick) / 1000.0; // convert to seconds
 		appState.lastTick = appState.currTick;
 		appState.delayTime += appState.deltaTime;
-		SDL_Log("Ticks: %d, Delta Time: %lf, Delay Time: %lf", appState.lastTick, appState.deltaTime, appState.delayTime);
 	}
 
 	SDL_DestroyRenderer(appState.renderer);
@@ -129,8 +137,8 @@ void SetupGameBoard(AppState& appState, Snake& snake) {
 	SDL_RenderClear(appState.renderer);
 
 	// snake starting position
-	snake.headPos.x = WIDTH / 2;
-	snake.headPos.y = HEIGHT / 2;
+	snake.headPos.x = GAME_BOARD_WIDTH / 2;
+	snake.headPos.y = GAME_BOARD_HEIGHT / 2;
 
 	// spawn the first snake body
 	SpawnFirstBody(snake);
@@ -183,21 +191,17 @@ void InputEvent(Snake& snake, SDL_Scancode scancode) {
 void CalcSnakePos(Snake& snake, AppState& appState) {
 	// if snake head goes out of bounds, wrap it around to the other side of the screen	
 	if (snake.headPos.x < 0) {
-		CalcSnakeBodyPos(snake);
-		snake.headPos.x = WIDTH - TILE_SIZE;
+		snake.headPos.x = GAME_BOARD_WIDTH - TILE_SIZE;
 	}
-	else if (snake.headPos.x >= WIDTH) {
-		CalcSnakeBodyPos(snake);	
+	else if (snake.headPos.x >= GAME_BOARD_WIDTH) {
 		snake.headPos.x = 0;
 	}
 
-	if (snake.headPos.y < 0) {
-		CalcSnakeBodyPos(snake);
+	if (snake.headPos.y < HEIGHT - GAME_BOARD_HEIGHT) {
 		snake.headPos.y = HEIGHT - TILE_SIZE;
 	}
 	else if (snake.headPos.y >= HEIGHT) {
-		CalcSnakeBodyPos(snake);
-		snake.headPos.y = 0;
+		snake.headPos.y = HEIGHT - GAME_BOARD_HEIGHT;
 	}
 
 	// pos formula: new pos = old pos + (direction * speed * delta time)
@@ -239,8 +243,8 @@ void CalcSnakeBodyPos(Snake& snake) {
 
 void SpawnFood(Food& food, AppState& appState, Snake& snake) {
 	while (!food.isSpawn) {
-		food.pos.x = (rand() % (WIDTH / TILE_SIZE)) * TILE_SIZE;
-		food.pos.y = (rand() % (HEIGHT / TILE_SIZE)) * TILE_SIZE;
+		food.pos.x = (rand() % (GAME_BOARD_WIDTH / TILE_SIZE)) * TILE_SIZE;
+		food.pos.y = ((rand() % ((GAME_BOARD_HEIGHT) / TILE_SIZE)) + (HEIGHT - GAME_BOARD_HEIGHT) / TILE_SIZE) * TILE_SIZE;
 
 		if (food.pos == snake.headPos) {
 			continue;
@@ -265,6 +269,13 @@ void SpawnFood(Food& food, AppState& appState, Snake& snake) {
 	SDL_FRect foodRect = { food.pos.x, food.pos.y, TILE_SIZE, TILE_SIZE };
 	SDL_SetRenderDrawColor(appState.renderer, 255, 0, 0, 255);
 	SDL_RenderFillRect(appState.renderer, &foodRect);
+}
+
+void UpdateUI(AppState& appState) {
+	SDL_SetRenderDrawColor(appState.renderer, 255, 255, 255, 255);
+	for (int i = 0; i < 20; i++) {
+		SDL_RenderLine(appState.renderer, 0, HEIGHT - GAME_BOARD_HEIGHT, WIDTH, HEIGHT - GAME_BOARD_HEIGHT);
+	}
 }
 
 void UpdateGameBoard(AppState& appState, Snake& snake, Food& food) {
