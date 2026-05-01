@@ -129,18 +129,39 @@ void SetupGameBoard(AppState& appState, Snake& snake) {
 }
 
 void InputEvent(Snake& snake, SDL_Scancode scancode) {
+	int checkSnakeHeadPosX, checkSnakeHeadPosY;
 	switch (scancode) {
 		case SDL_SCANCODE_W:
-			if (snake.action != Action::Down) snake.action = Action::Up;
+			checkSnakeHeadPosY = snake.headPos.y - TILE_SIZE;
+
+			if (checkSnakeHeadPosY != snake.bodyPos[0].y) {
+				snake.action = Action::Up;
+			}
+
 			break;
 		case SDL_SCANCODE_S:
-			if (snake.action != Action::Up) snake.action = Action::Down;
+			checkSnakeHeadPosY = snake.headPos.y + TILE_SIZE;
+
+			if (checkSnakeHeadPosY != snake.bodyPos[0].y) {
+				snake.action = Action::Down;
+			}
+
 			break;
 		case SDL_SCANCODE_A:
-			if (snake.action != Action::Right) snake.action = Action::Left;
+			checkSnakeHeadPosX = snake.headPos.x - TILE_SIZE;
+
+			if (checkSnakeHeadPosX != snake.bodyPos[0].x) {
+				snake.action = Action::Left;
+			}
+
 			break;
 		case SDL_SCANCODE_D:
-			if (snake.action != Action::Left) snake.action = Action::Right;
+			checkSnakeHeadPosX = snake.headPos.x + TILE_SIZE;
+
+			if (checkSnakeHeadPosX != snake.bodyPos[0].x) {
+				snake.action = Action::Right;
+			}
+
 			break;
 	}
 }
