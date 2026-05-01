@@ -2,14 +2,14 @@
 #include <SDl3/SDL_main.h>
 #include <SDL3/SDL_video.h>
 #include <windows.h>
-#include <cstdlib>
+#include <cstdlib>	
 #include <time.h>
 #include <vector>
 
 constexpr int WIDTH = 768;
 constexpr int HEIGHT = 768;
 constexpr int TILE_SIZE = 48;
-constexpr int SNAKE_SPEED_DELAY = 100; 
+constexpr double DELAY = 0.1; 
 
 struct Vector2 {
 	int x;
@@ -46,12 +46,17 @@ struct Snake {
 struct AppState {
 	SDL_Window* window;
 	SDL_Renderer* renderer;
+	int lastTick;
+	int currTick;
+	double deltaTime;
+	double delayTime;
 	bool isRunning;
+
 };
 
 void SetupGameBoard(AppState& appState, Snake& snake);
 void InputEvent(Snake& snake, SDL_Scancode scancode);
-void CalcSnakePos(Snake& snake);
+void CalcSnakePos(Snake& snake, AppState& appState);
 void CalcSnakeBodyPos(Snake& snake);
 void SpawnFood(Food& food, AppState& appState, Snake& snake);
 void UpdateGameBoard(AppState& appState, Snake& snake, Food& food);
@@ -79,7 +84,9 @@ int SDL_main(int argc, char* argv[]) {
 	SetupGameBoard(appState, snake);
 
 	appState.isRunning = true;
+	appState.lastTick = SDL_GetTicks();
 	while (appState.isRunning) {
+
 		SDL_Event event;
 		while (SDL_PollEvent(&event)) {
 			switch (event.type) {
@@ -103,6 +110,13 @@ int SDL_main(int argc, char* argv[]) {
 		UpdateGameBoard(appState, snake, food);
 
 		SDL_RenderPresent(appState.renderer);
+
+		// calculate the delta time for the next frame
+		appState.currTick = SDL_GetTicks();
+		appState.deltaTime = (appState.currTick - appState.lastTick) / 1000.0; // convert to seconds
+		appState.lastTick = appState.currTick;
+		appState.delayTime += appState.deltaTime;
+		SDL_Log("Ticks: %d, Delta Time: %lf, Delay Time: %lf", appState.lastTick, appState.deltaTime, appState.delayTime);
 	}
 
 	SDL_DestroyRenderer(appState.renderer);
@@ -166,7 +180,8 @@ void InputEvent(Snake& snake, SDL_Scancode scancode) {
 	}
 }
 
-void CalcSnakePos(Snake& snake) {
+void CalcSnakePos(Snake& snake, AppState& appState) {
+	// if snake head goes out of bounds, wrap it around to the other side of the screen	
 	if (snake.headPos.x < 0) {
 		CalcSnakeBodyPos(snake);
 		snake.headPos.x = WIDTH - TILE_SIZE;
@@ -185,27 +200,31 @@ void CalcSnakePos(Snake& snake) {
 		snake.headPos.y = 0;
 	}
 
-	if (snake.action == Action::Up) {
-		CalcSnakeBodyPos(snake);
-		snake.headPos.y -= TILE_SIZE;
-	}
-	
-	if (snake.action == Action::Down) {
-		CalcSnakeBodyPos(snake);
-		snake.headPos.y += TILE_SIZE;
-	}
-	
-	if (snake.action == Action::Left) {
-		CalcSnakeBodyPos(snake);
-		snake.headPos.x -= TILE_SIZE;
-	}
-	
-	if (snake.action == Action::Right) {
-		CalcSnakeBodyPos(snake);
-		snake.headPos.x += TILE_SIZE;
-	}
+	// pos formula: new pos = old pos + (direction * speed * delta time)
+	// snake.headPos.y = snake.headPos.y - TILE_SIZE + ( TILE_SIZE * delta time)
+	if (appState.delayTime >= DELAY) {
+		appState.delayTime -= DELAY;
 
-	Sleep(SNAKE_SPEED_DELAY);
+		if (snake.action == Action::Up) {
+			CalcSnakeBodyPos(snake);
+			snake.headPos.y -= TILE_SIZE;
+		}
+
+		if (snake.action == Action::Down) {
+			CalcSnakeBodyPos(snake);
+			snake.headPos.y += TILE_SIZE;
+		}
+
+		if (snake.action == Action::Left) {
+			CalcSnakeBodyPos(snake);
+			snake.headPos.x -= TILE_SIZE;
+		}
+
+		if (snake.action == Action::Right) {
+			CalcSnakeBodyPos(snake);
+			snake.headPos.x += TILE_SIZE;
+		}
+	}
 }
 
 void CalcSnakeBodyPos(Snake& snake) {
@@ -249,12 +268,11 @@ void SpawnFood(Food& food, AppState& appState, Snake& snake) {
 }
 
 void UpdateGameBoard(AppState& appState, Snake& snake, Food& food) {
-	CalcSnakePos(snake);
+	CalcSnakePos(snake, appState);
 
 	if (snake.headPos == food.pos) {
 		food.isSpawn = false;
 		SpawnNextBody(snake);
-		Sleep(100);
 	}	
 
 	SpawnFood(food, appState, snake);
