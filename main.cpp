@@ -1,7 +1,6 @@
 #include <SDL3/SDL.h>
 #include <SDl3/SDL_main.h>
 #include <SDL3/SDL_video.h>
-#include <SDL3_ttf/SDL_ttf.h>
 #include <windows.h>
 #include <cstdlib>	
 #include <time.h>
@@ -9,7 +8,7 @@
 #include <string>
 
 constexpr int WIDTH = 768;
-constexpr int HEIGHT = 960;
+constexpr int HEIGHT = 816;
 constexpr int GAME_BOARD_WIDTH = 768;
 constexpr int GAME_BOARD_HEIGHT = 768;
 constexpr int TILE_SIZE = 48;
@@ -50,26 +49,35 @@ struct Snake {
 struct AppState {
 	SDL_Window* window;
 	SDL_Renderer* renderer;
-	TTF_Font* font;
+	SDL_Texture* texture;
+
 	int lastTick;
 	int currTick;
-	double deltaTime;
-	double delayTime;
-	bool isRunning;
 	int score;
+
+	double deltaTime;
+	double timer;
+	double delayTime;
+
+	bool isRunning;
+	bool isGameStart;
+	bool isGameOver;
 };
 
 void SetupGameBoard(AppState& appState, Snake& snake);
-void InputEvent(Snake& snake, SDL_Scancode scancode);
+void PlayerInput(AppState& appState, Snake& snake, SDL_Scancode scancode);
 void CalcSnakePos(Snake& snake, AppState& appState);
 void CalcSnakeBodyPos(Snake& snake);
 void SpawnFood(Food& food, AppState& appState, Snake& snake);
 void UpdateUI(AppState& appState);
 void UpdateGameBoard(AppState& appState, Snake& snake, Food& food);
 void MoveSnake(AppState& appState, Snake& snake);
-bool IsCollide(Snake& snake);
 void SpawnFirstBody(Snake& snake);
 void SpawnNextBody(Snake& snake);
+
+bool IsCollide(Snake& snake);
+bool IsEatFood(Snake& snake, Food& food);
+
 
 int SDL_main(int argc, char* argv[]) {
 	SDL_Init(SDL_INIT_AUDIO | SDL_INIT_VIDEO);
@@ -78,6 +86,7 @@ int SDL_main(int argc, char* argv[]) {
 	appState.window = SDL_CreateWindow("Snake Game", WIDTH, HEIGHT, SDL_WINDOW_KEYBOARD_GRABBED);
 	appState.renderer = SDL_CreateRenderer(appState.window, NULL);
 	appState.score = 0;
+	appState.isGameOver = false;
 
 	Snake snake = {};
 	snake.bodyPos.reserve(100);
@@ -102,7 +111,8 @@ int SDL_main(int argc, char* argv[]) {
 				break;
 
 			case SDL_EVENT_KEY_DOWN:
-				InputEvent(snake, event.key.scancode);
+				appState.isGameStart = true;
+				PlayerInput(appState, snake, event.key.scancode);
 			}
 		}
 
@@ -113,10 +123,9 @@ int SDL_main(int argc, char* argv[]) {
 		SDL_SetRenderDrawColor(appState.renderer, 0, 0, 0, 255);
 		SDL_RenderFillRect(appState.renderer, NULL);
 
-		// render objects
-		UpdateUI(appState);
-
+		// render game and ui
 		UpdateGameBoard(appState, snake, food);
+		UpdateUI(appState);
 
 		SDL_RenderPresent(appState.renderer);
 
@@ -124,6 +133,11 @@ int SDL_main(int argc, char* argv[]) {
 		appState.currTick = SDL_GetTicks();
 		appState.deltaTime = (appState.currTick - appState.lastTick) / 1000.0; // convert to seconds
 		appState.lastTick = appState.currTick;
+
+		if (appState.isGameStart && !appState.isGameOver) {
+			appState.timer += appState.deltaTime;
+		}
+
 		appState.delayTime += appState.deltaTime;
 	}
 
@@ -150,41 +164,44 @@ void SetupGameBoard(AppState& appState, Snake& snake) {
 	SDL_RenderPresent(appState.renderer);
 }
 
-void InputEvent(Snake& snake, SDL_Scancode scancode) {
-	int checkSnakeHeadPosX, checkSnakeHeadPosY;
-	switch (scancode) {
-		case SDL_SCANCODE_W:
-			checkSnakeHeadPosY = snake.headPos.y - TILE_SIZE;
+void PlayerInput(AppState& appState, Snake& snake, SDL_Scancode scancode) {
+	if (!appState.isGameOver) {
+		int checkSnakeHeadPosX, checkSnakeHeadPosY;
 
-			if (checkSnakeHeadPosY != snake.bodyPos[0].y) {
-				snake.action = Action::Up;
-			}
+		switch (scancode) {
+			case SDL_SCANCODE_W:
+				checkSnakeHeadPosY = snake.headPos.y - TILE_SIZE;
 
-			break;
-		case SDL_SCANCODE_S:
-			checkSnakeHeadPosY = snake.headPos.y + TILE_SIZE;
+				if (checkSnakeHeadPosY != snake.bodyPos[0].y) {
+					snake.action = Action::Up;
+				}
 
-			if (checkSnakeHeadPosY != snake.bodyPos[0].y) {
-				snake.action = Action::Down;
-			}
+				break;
+			case SDL_SCANCODE_S:
+				checkSnakeHeadPosY = snake.headPos.y + TILE_SIZE;
 
-			break;
-		case SDL_SCANCODE_A:
-			checkSnakeHeadPosX = snake.headPos.x - TILE_SIZE;
+				if (checkSnakeHeadPosY != snake.bodyPos[0].y) {
+					snake.action = Action::Down;
+				}
 
-			if (checkSnakeHeadPosX != snake.bodyPos[0].x) {
-				snake.action = Action::Left;
-			}
+				break;
+			case SDL_SCANCODE_A:
+				checkSnakeHeadPosX = snake.headPos.x - TILE_SIZE;
 
-			break;
-		case SDL_SCANCODE_D:
-			checkSnakeHeadPosX = snake.headPos.x + TILE_SIZE;
+				if (checkSnakeHeadPosX != snake.bodyPos[0].x) {
+					snake.action = Action::Left;
+				}
 
-			if (checkSnakeHeadPosX != snake.bodyPos[0].x) {
-				snake.action = Action::Right;
-			}
+				break;
+			case SDL_SCANCODE_D:
+				checkSnakeHeadPosX = snake.headPos.x + TILE_SIZE;
 
-			break;
+				if (checkSnakeHeadPosX != snake.bodyPos[0].x) {
+					snake.action = Action::Right;
+				}
+
+				break;
+		}
 	}
 }
 
@@ -272,17 +289,29 @@ void SpawnFood(Food& food, AppState& appState, Snake& snake) {
 }
 
 void UpdateUI(AppState& appState) {
+
 	SDL_SetRenderDrawColor(appState.renderer, 255, 255, 255, 255);
-	for (int i = 0; i < 20; i++) {
-		SDL_RenderLine(appState.renderer, 0, HEIGHT - GAME_BOARD_HEIGHT, WIDTH, HEIGHT - GAME_BOARD_HEIGHT);
+	SDL_RenderLine(appState.renderer, 0, HEIGHT - GAME_BOARD_HEIGHT, WIDTH, HEIGHT - GAME_BOARD_HEIGHT);
+	
+	SDL_RenderDebugTextFormat(appState.renderer, 0, 24, "Score: %d", appState.score);
+
+	SDL_RenderDebugTextFormat(appState.renderer, 120, 24, "Time: %.2fs", appState.timer);
+
+	if (!appState.isGameStart) {
+		SDL_RenderDebugText(appState.renderer, 315 , HEIGHT - GAME_BOARD_HEIGHT + TILE_SIZE, "Press WASD to Start");
+	}
+
+	if (appState.isGameOver) {
+		SDL_RenderDebugText(appState.renderer, 315, HEIGHT - GAME_BOARD_HEIGHT + TILE_SIZE, "Game Over!");
 	}
 }
 
 void UpdateGameBoard(AppState& appState, Snake& snake, Food& food) {
 	CalcSnakePos(snake, appState);
 
-	if (snake.headPos == food.pos) {
+	if (IsEatFood(snake, food)) {
 		food.isSpawn = false;
+		appState.score++;
 		SpawnNextBody(snake);
 	}	
 
@@ -290,8 +319,7 @@ void UpdateGameBoard(AppState& appState, Snake& snake, Food& food) {
 	MoveSnake(appState, snake);
 
 	if (IsCollide(snake)) {
-
-		appState.isRunning = false;
+		appState.isGameOver = true;
 	}
 }
 
@@ -312,6 +340,10 @@ void MoveSnake(AppState& appState, Snake& snake) {
 			SDL_RenderFillRect(appState.renderer, &snakeNextBodyRect);
 		}
 	}
+}
+
+bool IsEatFood(Snake& snake, Food& food) {
+	return snake.headPos == food.pos;
 }
 
 bool IsCollide(Snake& snake) {
