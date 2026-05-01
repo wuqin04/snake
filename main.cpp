@@ -8,8 +8,8 @@
 
 constexpr int WIDTH = 768;
 constexpr int HEIGHT = 768;
-constexpr int TILE_SIZE = 24;
-constexpr int SNAKE_VELOCITY = 75; 
+constexpr int TILE_SIZE = 48;
+constexpr int SNAKE_SPEED_DELAY = 100; 
 
 struct Vector2 {
 	int x;
@@ -46,14 +46,19 @@ struct Snake {
 struct AppState {
 	SDL_Window* window;
 	SDL_Renderer* renderer;
+	bool isRunning;
 };
 
 void SetupGameBoard(AppState& appState, Snake& snake);
+void InputEvent(Snake& snake, SDL_Scancode scancode);
 void CalcSnakePos(Snake& snake);
 void CalcSnakeBodyPos(Snake& snake);
-void spawnFood(Food& food, AppState& appState);
+void SpawnFood(Food& food, AppState& appState, Snake& snake);
 void UpdateGameBoard(AppState& appState, Snake& snake, Food& food);
 void MoveSnake(AppState& appState, Snake& snake);
+bool IsCollide(Snake& snake);
+void SpawnFirstBody(Snake& snake);
+void SpawnNextBody(Snake& snake);
 
 int SDL_main(int argc, char* argv[]) {
 	SDL_Init(SDL_INIT_AUDIO | SDL_INIT_VIDEO);
@@ -73,37 +78,17 @@ int SDL_main(int argc, char* argv[]) {
 	// game loop
 	SetupGameBoard(appState, snake);
 
-	bool running = true;
-	while (running) {
+	appState.isRunning = true;
+	while (appState.isRunning) {
 		SDL_Event event;
 		while (SDL_PollEvent(&event)) {
 			switch (event.type) {
 			case SDL_EVENT_QUIT:
-				running = false;
+				appState.isRunning = false;
 				break;
 
 			case SDL_EVENT_KEY_DOWN:
-				switch (event.key.key) {
-					case SDLK_W:
-						if (snake.action == Action::Down) break;
-						snake.action = Action::Up;
-						break;
-
-					case SDLK_S:
-						if (snake.action == Action::Up) break;
-						snake.action = Action::Down;
-						break;
-
-					case SDLK_A:
-						if (snake.action == Action::Right) break;
-						snake.action = Action::Left;
-						break;
-
-					case SDLK_D:
-						if (snake.action == Action::Left) break;
-						snake.action = Action::Right;
-						break;
-				}
+				InputEvent(snake, event.key.scancode);
 			}
 		}
 
@@ -132,13 +117,32 @@ void SetupGameBoard(AppState& appState, Snake& snake) {
 	// snake starting position
 	snake.headPos.x = WIDTH / 2;
 	snake.headPos.y = HEIGHT / 2;
-	snake.bodyPos.push_back(snake.headPos);
+
+	// spawn the first snake body
+	SpawnFirstBody(snake);
 
 	SDL_FRect snakeRect = { snake.headPos.x, snake.headPos.y, TILE_SIZE, TILE_SIZE };
 	SDL_SetRenderDrawColor(appState.renderer, 128, 128, 128, 255);
 	SDL_RenderFillRect(appState.renderer, &snakeRect);
 
 	SDL_RenderPresent(appState.renderer);
+}
+
+void InputEvent(Snake& snake, SDL_Scancode scancode) {
+	switch (scancode) {
+		case SDL_SCANCODE_W:
+			if (snake.action != Action::Down) snake.action = Action::Up;
+			break;
+		case SDL_SCANCODE_S:
+			if (snake.action != Action::Up) snake.action = Action::Down;
+			break;
+		case SDL_SCANCODE_A:
+			if (snake.action != Action::Right) snake.action = Action::Left;
+			break;
+		case SDL_SCANCODE_D:
+			if (snake.action != Action::Left) snake.action = Action::Right;
+			break;
+	}
 }
 
 void CalcSnakePos(Snake& snake) {
@@ -180,7 +184,7 @@ void CalcSnakePos(Snake& snake) {
 		snake.headPos.x += TILE_SIZE;
 	}
 
-	Sleep(SNAKE_VELOCITY);
+	Sleep(SNAKE_SPEED_DELAY);
 }
 
 void CalcSnakeBodyPos(Snake& snake) {
@@ -193,28 +197,52 @@ void CalcSnakeBodyPos(Snake& snake) {
 	snake.bodyPos[0] = snake.headPos;
 }
 
-void spawnFood(Food& food, AppState& appState) {
-	if (!food.isSpawn) {
+void SpawnFood(Food& food, AppState& appState, Snake& snake) {
+	while (!food.isSpawn) {
 		food.pos.x = (rand() % (WIDTH / TILE_SIZE)) * TILE_SIZE;
 		food.pos.y = (rand() % (HEIGHT / TILE_SIZE)) * TILE_SIZE;
+
+		if (food.pos == snake.headPos) {
+			continue;
+		}
+
+		bool isOnSnakeBody = false;
+		for (int i = 0; i < snake.bodyPos.size(); i++) {
+			if (food.pos == snake.bodyPos[i]) {
+				isOnSnakeBody = true;
+				break;
+			}
+		}
+
+		if (isOnSnakeBody) {
+			continue;
+		}
+		else {
+			food.isSpawn = true;
+		}
 	}
 
 	SDL_FRect foodRect = { food.pos.x, food.pos.y, TILE_SIZE, TILE_SIZE };
 	SDL_SetRenderDrawColor(appState.renderer, 255, 0, 0, 255);
 	SDL_RenderFillRect(appState.renderer, &foodRect);
-	food.isSpawn = true;
 }
 
 void UpdateGameBoard(AppState& appState, Snake& snake, Food& food) {
-	spawnFood(food, appState);
 	CalcSnakePos(snake);
 
 	if (snake.headPos == food.pos) {
 		food.isSpawn = false;
-		snake.bodyPos.push_back(snake.headPos);
+		SpawnNextBody(snake);
 		Sleep(100);
 	}	
+
+	SpawnFood(food, appState, snake);
 	MoveSnake(appState, snake);
+
+	if (IsCollide(snake)) {
+
+		appState.isRunning = false;
+	}
 }
 
 void MoveSnake(AppState& appState, Snake& snake) {
@@ -234,4 +262,34 @@ void MoveSnake(AppState& appState, Snake& snake) {
 			SDL_RenderFillRect(appState.renderer, &snakeNextBodyRect);
 		}
 	}
+}
+
+bool IsCollide(Snake& snake) {
+	for (size_t i = 0; i < snake.bodyPos.size(); i++) {
+		if (snake.headPos == snake.bodyPos[i]) {
+			return true;
+		}
+	}
+	return false;
+}
+
+// randomize pos of first body part to prevent snake from colliding with itself at the start of the game
+void SpawnFirstBody(Snake& snake) {
+	bool isRandomX = (rand() % 2) == 1;
+	int randomX = snake.headPos.x;
+	int randomY = snake.headPos.y;
+
+	if (isRandomX) {
+		randomX = (rand() % 2) == 1 ? snake.headPos.x + TILE_SIZE : snake.headPos.x - TILE_SIZE;
+	}
+	else {
+		randomY = (rand() % 2) == 1 ? snake.headPos.y + TILE_SIZE : snake.headPos.y - TILE_SIZE;
+	}
+
+	Vector2 randomBodyPos = { randomX, randomY };
+	snake.bodyPos.push_back(randomBodyPos);
+}
+
+void SpawnNextBody(Snake& snake) {
+	snake.bodyPos.push_back(snake.bodyPos[snake.bodyPos.size() - 1]);
 }
